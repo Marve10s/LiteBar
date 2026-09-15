@@ -287,6 +287,7 @@ final class Store: ObservableObject {
                 let usage = try await ClaudeClient.usage()
                 return ProviderSnapshot(
                     provider: .claude,
+                    accountLine: usage.email,
                     badge: usage.accountSummary,
                     windows: usage.windows,
                     extras: [],

@@ -115,6 +115,8 @@ struct OverviewRow: View {
                                 .foregroundStyle(.tertiary)
                                 .monospacedDigit()
                                 .lineLimit(1)
+                                .fixedSize()
+                                .layoutPriority(1)
                         }
                     }
                     if let window {
@@ -134,7 +136,7 @@ struct OverviewRow: View {
                                 .lineLimit(1)
                         }
                     } else if !snapshot.windows.isEmpty {
-                        Text("All limits hidden in Settings")
+                        Text("All limits hidden")
                             .font(.caption)
                             .foregroundStyle(.tertiary)
                     }
@@ -267,6 +269,9 @@ struct ProviderPage: View {
                     .truncationMode(.middle)
             }
             Spacer(minLength: 4)
+            if let snapshot, !snapshot.windows.isEmpty {
+                LimitsMenu(store: store, provider: provider, snapshot: snapshot)
+            }
             if store.refreshing.contains(provider), store.connectivity == .available {
                 ProgressView()
                     .controlSize(.small)
@@ -299,7 +304,7 @@ struct LimitsCard: View {
                 WindowRow(title: window.displayTitle, window: window, now: now)
             }
             if windows.isEmpty {
-                Text("All limits hidden in Settings.")
+                Text("All limits hidden. Use the filter above to show them.")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
             }
@@ -459,6 +464,59 @@ struct IconButton: View {
     }
 }
 
+struct LimitsMenu: View {
+    @ObservedObject var store: Store
+    let provider: Provider
+    let snapshot: ProviderSnapshot
+    @State private var hovering = false
+
+    private var titles: [String] {
+        var seen: [String] = []
+        for window in snapshot.windows where !seen.contains(window.displayTitle) {
+            seen.append(window.displayTitle)
+        }
+        return seen
+    }
+
+    var body: some View {
+        Menu {
+            Picker("Overview shows", selection: Binding(
+                get: { store.windowPreferences.headline(for: provider) },
+                set: { store.setHeadlineWindow($0, for: provider) }
+            )) {
+                Text("Tightest limit").tag(WindowPreferences.tightest)
+                ForEach(titles, id: \.self) { Text($0).tag($0) }
+            }
+            .pickerStyle(.inline)
+            Section("Visible limits") {
+                ForEach(titles, id: \.self) { title in
+                    Toggle(title, isOn: Binding(
+                        get: { store.windowPreferences.isVisible(title, for: provider) },
+                        set: { store.setWindowVisible($0, title, for: provider) }
+                    ))
+                }
+            }
+        } label: {
+            Image(systemName: "line.3.horizontal.decrease")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(hovering ? .primary : .secondary)
+                .frame(width: 26, height: 26)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(Color.primary.opacity(hovering ? 0.08 : 0))
+                )
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .onHover { hovering = $0 }
+        .pointerCursor()
+        .help("Choose which limits to show")
+    }
+}
+
 struct CardBackground: View {
     var body: some View {
         RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -496,12 +554,17 @@ struct PlanPill: View {
     let text: String
 
     var body: some View {
-        Text(text)
-            .font(.system(size: 10, weight: .semibold))
+        Text(text.uppercased())
+            .font(.system(size: 9, weight: .bold, design: .rounded))
+            .tracking(0.6)
             .foregroundStyle(.secondary)
-            .padding(.horizontal, 6)
+            .padding(.horizontal, 5)
             .padding(.vertical, 2)
-            .background(Capsule().fill(Color.primary.opacity(0.07)))
+            .overlay(
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.16), lineWidth: 1)
+            )
+            .fixedSize()
     }
 }
 

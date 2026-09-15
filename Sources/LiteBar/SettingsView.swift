@@ -18,18 +18,16 @@ struct SettingsPage: View {
 
             PageScroll {
                 VStack(spacing: 8) {
-                    SettingsCard(title: "CLIs", footer: nil) {
+                    SettingsCard(title: "CLIs") {
                         ForEach(Array(Provider.allCases.enumerated()), id: \.element.id) { index, provider in
-                            if index > 0 { Divider().opacity(0.6) }
+                            if index > 0 { RowDivider() }
                             SwitchRow(isOn: Binding(
                                 get: { store.enabledProviders.contains(provider) },
                                 set: { store.setEnabled(provider, $0) }
                             )) {
-                                HStack(spacing: 8) {
-                                    BrandBadge(provider: provider, size: 18)
-                                    Text(provider.displayName)
-                                        .font(.system(size: 12, weight: .medium))
-                                }
+                                BrandBadge(provider: provider, size: 18)
+                                Text(provider.displayName)
+                                    .font(.system(size: 12, weight: .medium))
                             }
                         }
                     }
@@ -38,40 +36,9 @@ struct SettingsPage: View {
                         ClaudeUsageSettings(store: store)
                     }
 
-                    ForEach(store.enabledProviders) { provider in
-                        LimitPreferencesCard(store: store, provider: provider)
-                    }
-
-                    SettingsCard(title: "Menu bar", footer: nil) {
-                        SettingRow(label: "Refresh") {
-                            PillPicker(
-                                options: RefreshInterval.allCases.map { (String($0.rawValue), $0.label) },
-                                selection: Binding(
-                                    get: { String(refreshInterval) },
-                                    set: { refreshInterval = Int($0) ?? RefreshInterval.fiveMinutes.rawValue; store.applyIntervalChange() }
-                                )
-                            )
-                        }
-                        Divider().opacity(0.6)
-                        SettingRow(label: "Gauge tracks") {
-                            PillPicker(
-                                options: [(MenuBarSource.tightest.rawValue, MenuBarSource.tightest.label)]
-                                    + Provider.allCases.map { (MenuBarSource.provider($0).rawValue, $0.displayName) },
-                                selection: Binding(
-                                    get: { menuBarSource },
-                                    set: { menuBarSource = $0; store.updateMenuBar() }
-                                )
-                            )
-                        }
-                        Divider().opacity(0.6)
-                        SwitchRow(isOn: $menuBarShowsPercent) {
-                            Text("Show percentage next to the icon")
-                                .font(.system(size: 12))
-                        }
-                    }
-
-                    SettingsCard(title: "System", footer: nil) {
+                    SettingsCard(title: "General") {
                         SwitchRow(isOn: $launchAtLogin) {
+                            RowIcon(symbol: "power")
                             Text("Launch at login")
                                 .font(.system(size: 12))
                         }
@@ -86,21 +53,48 @@ struct SettingsPage: View {
                                 launchAtLogin = SMAppService.mainApp.status == .enabled
                             }
                         }
-                    }
-
-                    SettingsCard(title: "About", footer: "LiteBar reads usage from provider APIs or Claude Code captures. There is no embedded browser or telemetry.") {
-                        HStack(spacing: 8) {
-                            Image(nsImage: AppIconArtwork.headerImage(size: 22))
-                                .clipShape(RoundedRectangle(cornerRadius: 5.5, style: .continuous))
-                            Text("LiteBar")
-                                .font(.system(size: 12, weight: .medium))
-                            Spacer()
-                            Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Development")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .monospacedDigit()
+                        RowDivider()
+                        SettingRow(symbol: "arrow.clockwise", label: "Refresh") {
+                            PillPicker(
+                                options: RefreshInterval.allCases.map { (String($0.rawValue), $0.label) },
+                                selection: Binding(
+                                    get: { String(refreshInterval) },
+                                    set: { refreshInterval = Int($0) ?? RefreshInterval.fiveMinutes.rawValue; store.applyIntervalChange() }
+                                )
+                            )
+                        }
+                        RowDivider()
+                        SettingRow(symbol: "gauge.with.needle", label: "Menu bar gauge") {
+                            PillPicker(
+                                options: [(MenuBarSource.tightest.rawValue, MenuBarSource.tightest.label)]
+                                    + Provider.allCases.map { (MenuBarSource.provider($0).rawValue, $0.displayName) },
+                                selection: Binding(
+                                    get: { menuBarSource },
+                                    set: { menuBarSource = $0; store.updateMenuBar() }
+                                )
+                            )
+                        }
+                        RowDivider()
+                        SwitchRow(isOn: $menuBarShowsPercent) {
+                            RowIcon(symbol: "percent")
+                            Text("Percentage in menu bar")
+                                .font(.system(size: 12))
                         }
                     }
+
+                    HStack(spacing: 8) {
+                        Image(nsImage: AppIconArtwork.headerImage(size: 18))
+                            .clipShape(RoundedRectangle(cornerRadius: 4.5, style: .continuous))
+                        Text("LiteBar")
+                            .font(.system(size: 12, weight: .medium))
+                        Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Development")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                            .monospacedDigit()
+                        Spacer()
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.top, 4)
                 }
                 .padding(.horizontal, 12)
                 .padding(.bottom, 2)
@@ -121,7 +115,7 @@ struct SettingsPage: View {
 
 struct SettingsCard<Content: View>: View {
     let title: String
-    let footer: String?
+    var footer: String? = nil
     @ViewBuilder let content: () -> Content
 
     var body: some View {
@@ -129,12 +123,14 @@ struct SettingsCard<Content: View>: View {
             Text(title.uppercased())
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.tertiary)
+                .padding(.bottom, 2)
             content()
             if let footer {
                 Text(footer)
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 2)
             }
         }
         .padding(12)
@@ -143,17 +139,37 @@ struct SettingsCard<Content: View>: View {
     }
 }
 
+struct RowDivider: View {
+    var body: some View {
+        Divider().opacity(0.6)
+    }
+}
+
+struct RowIcon: View {
+    let symbol: String
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(.secondary)
+            .frame(width: 18, height: 18)
+    }
+}
+
 struct SettingRow<Control: View>: View {
+    var symbol: String? = nil
     let label: String
     @ViewBuilder let control: () -> Control
 
     var body: some View {
-        HStack {
+        HStack(spacing: 8) {
+            if let symbol { RowIcon(symbol: symbol) }
             Text(label)
                 .font(.system(size: 12))
             Spacer()
             control()
         }
+        .frame(minHeight: 22)
     }
 }
 
@@ -162,7 +178,7 @@ struct SwitchRow<Label: View>: View {
     @ViewBuilder let label: () -> Label
 
     var body: some View {
-        HStack {
+        HStack(spacing: 8) {
             label()
             Spacer()
             Toggle("", isOn: $isOn)
@@ -171,71 +187,7 @@ struct SwitchRow<Label: View>: View {
                 .controlSize(.mini)
                 .pointerCursor()
         }
-    }
-}
-
-struct LimitPreferencesCard: View {
-    @ObservedObject var store: Store
-    let provider: Provider
-    @State private var expanded = false
-
-    private var titles: [String] {
-        var seen: [String] = []
-        for window in store.snapshot(for: provider)?.windows ?? [] where !seen.contains(window.displayTitle) {
-            seen.append(window.displayTitle)
-        }
-        return seen
-    }
-
-    private var summary: String {
-        let shown = titles.filter { store.windowPreferences.isVisible($0, for: provider) }.count
-        let headline = store.windowPreferences.headline(for: provider)
-        let headlineText = headline == WindowPreferences.tightest ? "tightest" : headline
-        return titles.isEmpty ? "" : "\(shown) of \(titles.count) shown · \(headlineText)"
-    }
-
-    var body: some View {
-        DisclosureRow(isExpanded: $expanded) {
-            BrandBadge(provider: provider, size: 18)
-            Text("\(provider.displayName) limits")
-                .font(.system(size: 12, weight: .medium))
-            Spacer(minLength: 6)
-            Text(summary)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-        } content: {
-            VStack(alignment: .leading, spacing: 8) {
-                if titles.isEmpty {
-                    Text("Limits appear here after the first successful refresh.")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                } else {
-                    SettingRow(label: "Overview shows") {
-                        PillPicker(
-                            options: [(WindowPreferences.tightest, "Tightest limit")] + titles.map { ($0, $0) },
-                            selection: Binding(
-                                get: { store.windowPreferences.headline(for: provider) },
-                                set: { store.setHeadlineWindow($0, for: provider) }
-                            )
-                        )
-                    }
-                    Divider().opacity(0.6)
-                    ForEach(titles, id: \.self) { title in
-                        SwitchRow(isOn: Binding(
-                            get: { store.windowPreferences.isVisible(title, for: provider) },
-                            set: { store.setWindowVisible($0, title, for: provider) }
-                        )) {
-                            Text(title)
-                                .font(.system(size: 12))
-                        }
-                    }
-                }
-            }
-            .padding(.top, 2)
-        }
-        .padding(12)
-        .background(CardBackground())
+        .frame(minHeight: 22)
     }
 }
 
@@ -258,21 +210,20 @@ struct PillPicker: View {
                 }
             }
         } label: {
-            HStack(spacing: 6) {
+            HStack(spacing: 5) {
                 Text(options.first { $0.tag == selection }?.label ?? selection)
                     .font(.system(size: 12))
+                    .foregroundStyle(hovering ? .primary : .secondary)
                     .lineLimit(1)
-                    .truncationMode(.tail)
-                Spacer(minLength: 0)
                 Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(.tertiary)
             }
-            .padding(.horizontal, 9)
-            .frame(width: 176, height: 24)
+            .padding(.horizontal, 7)
+            .frame(height: 22)
             .background(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(Color.primary.opacity(hovering ? 0.12 : 0.08))
+                    .fill(Color.primary.opacity(hovering ? 0.08 : 0))
             )
             .contentShape(Rectangle())
         }
@@ -289,11 +240,13 @@ struct ClaudeUsageSettings: View {
     @ObservedObject var store: Store
     @AppStorage(ClaudeUsageMode.key) private var mode = ClaudeUsageMode.live.rawValue
 
+    private var isLocal: Bool { mode == ClaudeUsageMode.local.rawValue }
+
     var body: some View {
-        SettingsCard(title: "Claude usage", footer: mode == ClaudeUsageMode.local.rawValue
-                     ? "Reads the last captured limits, including while offline. No Claude network requests. Capture runs only on Claude Code status-line updates."
-                     : "Fetches current limits even when Claude Code is closed. A separate sign-in renews automatically; no helper stays running.") {
-            SettingRow(label: "Source") {
+        SettingsCard(title: "Claude Code", footer: isLocal
+                     ? "Reads limits that Claude Code writes on each status-line update. Works offline."
+                     : "Signs in once and renews automatically, even while Claude Code is closed.") {
+            SettingRow(symbol: "antenna.radiowaves.left.and.right", label: "Source") {
                 PillPicker(options: ClaudeUsageMode.allCases.map { ($0.rawValue, $0.label) },
                            selection: Binding(get: { mode }, set: {
                     guard let selected = ClaudeUsageMode(rawValue: $0) else { return }
@@ -301,58 +254,88 @@ struct ClaudeUsageSettings: View {
                     store.setClaudeMode(selected)
                 }))
             }
-            if mode == ClaudeUsageMode.local.rawValue {
-                Button("Enable capture in Claude Code") { store.installClaudeCapture() }
-                    .controlSize(.small)
+            RowDivider()
+            if isLocal {
+                SettingRow(symbol: "terminal", label: "Capture") {
+                    Button("Enable in Claude Code") { store.installClaudeCapture() }
+                        .controlSize(.small)
+                }
                 if let message = store.claudeSetupMessage {
-                    Text(message).font(.caption).foregroundStyle(.secondary)
+                    StatusLine(text: message)
                 }
             } else {
-                Button(store.claudeAuthorization == nil ? "Connect Claude…" : "Start a new sign-in…") {
-                    do {
-                        let request = try ClaudeOAuth.Authorization()
-                        store.claudeAuthorization = request
-                        store.claudeAuthorizationCode = ""
-                        store.claudeConnectionMessage = nil
-                        guard NSWorkspace.shared.open(request.url) else {
-                            throw AppError("Could not open your browser for Claude sign-in.")
-                        }
-                    } catch { store.claudeConnectionMessage = error.localizedDescription }
+                SettingRow(symbol: "person.crop.circle", label: "Sign-in") {
+                    Button(store.claudeAuthorization == nil ? "Connect…" : "Restart…") { startSignIn() }
+                        .controlSize(.small)
+                        .disabled(store.claudeConnecting)
                 }
-                .controlSize(.small)
-                .disabled(store.claudeConnecting)
                 if let authorization = store.claudeAuthorization {
-                    Text("Approve profile access in your browser, then paste the complete authorization code. Claude may label its authorization client as Claude Code.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    SecureField("Authorization code", text: $store.claudeAuthorizationCode)
-                        .textFieldStyle(.roundedBorder)
-                    HStack {
-                        Button("Finish connection") {
-                            store.claudeConnecting = true
-                            store.claudeConnectionMessage = nil
-                            let pasted = store.claudeAuthorizationCode
-                            store.claudeAuthorizationCode = ""
-                            Task {
-                                do {
-                                    try await ClaudeOAuth.session.connect(authorization, code: pasted)
-                                    store.claudeAuthorization = nil
-                                    store.claudeConnectionMessage = "Connected. Live limits renew automatically."
-                                    await store.refresh(.claude)
-                                } catch { store.claudeConnectionMessage = error.localizedDescription }
-                                store.claudeConnecting = false
-                            }
-                        }
-                        .disabled(store.claudeAuthorizationCode.isEmpty || store.claudeConnecting)
-                        Button("Cancel") { store.claudeAuthorization = nil; store.claudeAuthorizationCode = "" }
-                            .disabled(store.claudeConnecting)
-                        if store.claudeConnecting { ProgressView().controlSize(.mini) }
-                    }
-                    .controlSize(.small)
+                    authorizationForm(authorization)
                 }
                 if let message = store.claudeConnectionMessage {
-                    Text(message).font(.caption).foregroundStyle(.secondary)
+                    StatusLine(text: message)
                 }
             }
         }
+    }
+
+    private func startSignIn() {
+        do {
+            let request = try ClaudeOAuth.Authorization()
+            store.claudeAuthorization = request
+            store.claudeAuthorizationCode = ""
+            store.claudeConnectionMessage = nil
+            guard NSWorkspace.shared.open(request.url) else {
+                throw AppError("Could not open your browser for Claude sign-in.")
+            }
+        } catch { store.claudeConnectionMessage = error.localizedDescription }
+    }
+
+    private func authorizationForm(_ authorization: ClaudeOAuth.Authorization) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Approve in the browser, then paste the code here.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            HStack(spacing: 6) {
+                SecureField("Authorization code", text: $store.claudeAuthorizationCode)
+                    .textFieldStyle(.roundedBorder)
+                    .controlSize(.small)
+                Button("Finish") { finishSignIn(authorization) }
+                    .controlSize(.small)
+                    .disabled(store.claudeAuthorizationCode.isEmpty || store.claudeConnecting)
+                Button("Cancel") { store.claudeAuthorization = nil; store.claudeAuthorizationCode = "" }
+                    .controlSize(.small)
+                    .disabled(store.claudeConnecting)
+                if store.claudeConnecting { ProgressView().controlSize(.mini) }
+            }
+        }
+        .padding(.top, 2)
+    }
+
+    private func finishSignIn(_ authorization: ClaudeOAuth.Authorization) {
+        store.claudeConnecting = true
+        store.claudeConnectionMessage = nil
+        let pasted = store.claudeAuthorizationCode
+        store.claudeAuthorizationCode = ""
+        Task {
+            do {
+                try await ClaudeOAuth.session.connect(authorization, code: pasted)
+                store.claudeAuthorization = nil
+                store.claudeConnectionMessage = "Connected."
+                await store.refresh(.claude)
+            } catch { store.claudeConnectionMessage = error.localizedDescription }
+            store.claudeConnecting = false
+        }
+    }
+}
+
+struct StatusLine: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }

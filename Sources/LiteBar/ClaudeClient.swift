@@ -21,7 +21,13 @@ enum ClaudeClient {
     struct Usage: Sendable, Equatable {
         var windows: [RateWindow]
         var accountSummary: String?
+        var email: String?
         var capturedAt: Date?
+    }
+
+    struct Profile: Sendable, Equatable {
+        var email: String?
+        var plan: String?
     }
 
     static func usage(mode: ClaudeUsageMode = .current) async throws -> Usage {
@@ -56,19 +62,72 @@ enum ClaudeClient {
     private struct Unauthorized: Error {}
 
     static func fetchUsage(token: String, session: URLSession = HTTPClient.session) async throws -> Usage {
-        var request = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/usage")!)
-        request.httpMethod = "GET"
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
-        request.setValue("litebar/0.3", forHTTPHeaderField: "User-Agent")
-        let (data, response) = try await session.data(for: request)
+        async let profile = fetchProfile(token: token, session: session)
+        let (data, response) = try await session.data(for: request("usage", token: token))
         guard let http = response as? HTTPURLResponse else { throw AppError("No response") }
         if http.statusCode == 401 { throw Unauthorized() }
         guard (200..<300).contains(http.statusCode) else {
             throw AppError("Claude API HTTP \(http.statusCode)")
         }
-        return try decodeUsage(data)
+        var usage = try decodeUsage(data)
+        if let profile = await profile {
+            usage.accountSummary = profile.plan
+            usage.email = profile.email
+        }
+        return usage
+    }
+
+    private static func request(_ path: String, token: String) -> URLRequest {
+        var request = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/\(path)")!)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
+        request.setValue("litebar/0.3", forHTTPHeaderField: "User-Agent")
+        return request
+    }
+
+    static func fetchProfile(token: String, session: URLSession = HTTPClient.session) async -> Profile? {
+        guard let (data, response) = try? await session.data(for: request("profile", token: token)),
+              let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { return nil }
+        return decodeProfile(data)
+    }
+
+    static func decodeProfile(_ data: Data) -> Profile? {
+        struct Account: Decodable {
+            var email: String?
+            var has_claude_max: Bool?
+            var has_claude_pro: Bool?
+        }
+        struct Organization: Decodable {
+            var organization_type: String?
+            var rate_limit_tier: String?
+        }
+        struct Body: Decodable {
+            var account: Account?
+            var organization: Organization?
+        }
+        guard let body = try? JSONDecoder().decode(Body.self, from: data) else { return nil }
+        return Profile(email: body.account?.email,
+                       plan: planLabel(organizationType: body.organization?.organization_type,
+                                       rateLimitTier: body.organization?.rate_limit_tier,
+                                       hasMax: body.account?.has_claude_max ?? false,
+                                       hasPro: body.account?.has_claude_pro ?? false))
+    }
+
+    static func planLabel(organizationType: String?, rateLimitTier: String?, hasMax: Bool, hasPro: Bool) -> String? {
+        switch organizationType {
+        case "claude_enterprise": return "Enterprise"
+        case "claude_team": return "Team"
+        default: break
+        }
+        if hasMax {
+            if let tier = rateLimitTier, let range = tier.range(of: #"max_\d+x"#, options: .regularExpression) {
+                return "Max \(tier[range].dropFirst(4))"
+            }
+            return "Max"
+        }
+        return hasPro ? "Pro" : nil
     }
 
     static func decodeUsage(_ data: Data) throws -> Usage {

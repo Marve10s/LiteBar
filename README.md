@@ -34,7 +34,7 @@ Use the packaged app for the bundled Claude capture helper and launch-at-login s
 
 ## Provider setup
 
-Disable providers you do not use in Settings. Automatic refresh defaults to five minutes; manual refresh is also available.
+Disable providers you do not use in Settings. Automatic refresh defaults to five minutes; manual refresh is also available. On a CLI page, the filter button picks which limits are listed and which one the overview shows.
 
 | Provider | Setup and credential source |
 | --- | --- |
@@ -48,11 +48,11 @@ Provider usage endpoints and credential formats are unofficial integrations and 
 
 ## Claude modes
 
-Choose **Settings → Claude usage → Source**.
+Choose **Settings → Claude Code → Source**.
 
 For **Live limits**, click **Connect Claude**, approve profile access in the browser, then paste the complete authorization code into LiteBar. The authorization client may be labeled Claude Code. LiteBar creates its own grant and renews it when needed during a refresh. No browser or Claude process stays open. Revoked access requires a new sign-in.
 
-For **Local capture**, click **Enable capture in Claude Code**. LiteBar backs up `~/.claude/settings.json` and installs its native helper as the status-line command. An existing status-line command keeps its input, output, and exit status through forwarding. Claude Code must publish `rate_limits` in its status-line JSON; the integration was verified with Claude Code 2.1.268.
+For **Local capture**, click **Enable in Claude Code**. LiteBar backs up `~/.claude/settings.json` and installs its native helper as the status-line command. An existing status-line command keeps its input, output, and exit status through forwarding. Claude Code must publish `rate_limits` in its status-line JSON; the integration was verified with Claude Code 2.1.268.
 
 The helper saves only quota windows and the time they changed, then exits. It has no network code. Unchanged figures cause no capture write or LiteBar wakeup. Local figures can become stale while Claude Code is closed, when switching accounts, or when using Claude elsewhere. Captures live in `~/Library/Caches/dev.ibrahime.LiteBar/claude-usage.json` and contain no credentials or conversation text.
 

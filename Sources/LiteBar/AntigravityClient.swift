@@ -281,9 +281,9 @@ enum AntigravityClient {
 
     private static func poolName(for provider: String?) -> String {
         switch provider {
-        case "MODEL_PROVIDER_ANTHROPIC": "Claude models"
-        case "MODEL_PROVIDER_GOOGLE": "Gemini models"
-        default: "Other models"
+        case "MODEL_PROVIDER_ANTHROPIC": "Claude"
+        case "MODEL_PROVIDER_GOOGLE": "Gemini"
+        default: "Other"
         }
     }
 
@@ -294,7 +294,7 @@ enum AntigravityClient {
             if let existing = pools[quota.pool], existing.leftPercent <= model.leftPercent { continue }
             pools[quota.pool] = RateWindow(usedPercent: model.usedPercent, resetsAt: model.resetsAt, windowSeconds: nil, title: quota.pool)
         }
-        let order = ["Gemini models", "Claude models", "Other models"]
+        let order = ["Gemini", "Claude", "Other"]
         return order.compactMap { pools[$0] }
     }
 }
