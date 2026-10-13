@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-version="${1:-0.3.0}"
+version="${1:-0.4.2}"
 out="dist/LiteBar.app"
 rm -rf dist && mkdir -p "$out/Contents/MacOS" "$out/Contents/Resources"
 

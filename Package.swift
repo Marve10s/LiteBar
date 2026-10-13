@@ -14,6 +14,7 @@ let package = Package(
             resources: [
                 .copy("Resources/icons")
             ]
-        )
+        ),
+        .testTarget(name: "LiteBarTests", dependencies: ["LiteBar", "ClaudeUsageData"])
     ]
 )

@@ -23,6 +23,8 @@ struct PopoverView: View {
                 .padding(.top, 10)
         }
         .frame(width: 336)
+        .fixedSize(horizontal: false, vertical: true)
+        .background(PopoverWindowSizing())
         .onAppear { store.setPopoverVisible(true) }
         .onDisappear { store.setPopoverVisible(false) }
         .task { await refreshIfStale() }
@@ -44,6 +46,53 @@ struct PopoverView: View {
     }
 }
 
+struct PopoverWindowSizing: NSViewRepresentable {
+    func makeNSView(context: Context) -> PopoverSizingView {
+        PopoverSizingView()
+    }
+
+    func updateNSView(_ nsView: PopoverSizingView, context: Context) {
+        nsView.scheduleResize()
+    }
+}
+
+final class PopoverSizingView: NSView {
+    private var resizeScheduled = false
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        scheduleResize()
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        scheduleResize()
+    }
+
+    func scheduleResize() {
+        guard !resizeScheduled else { return }
+        resizeScheduled = true
+        let topEdge = window?.frame.maxY
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.resizeScheduled = false
+            self.resizeWindow(topEdge: topEdge)
+        }
+    }
+
+    private func resizeWindow(topEdge: CGFloat?) {
+        guard let window, bounds.width > 0, bounds.height > 0 else { return }
+        let contentSize = window.contentRect(forFrameRect: window.frame).size
+        let topEdge = topEdge ?? window.frame.maxY
+        guard abs(contentSize.width - bounds.width) > 0.5 || abs(contentSize.height - bounds.height) > 0.5
+                || abs(window.frame.maxY - topEdge) > 0.5 else { return }
+        let size = window.frameRect(forContentRect: NSRect(origin: .zero, size: bounds.size)).size
+        let frame = NSRect(x: window.frame.minX, y: topEdge - size.height,
+                           width: size.width, height: size.height)
+        window.setFrame(frame, display: true)
+    }
+}
+
 struct PageScroll<Content: View>: View {
     @ViewBuilder let content: () -> Content
 
@@ -59,33 +108,125 @@ struct PageScroll<Content: View>: View {
 
 struct OverviewPage: View {
     @ObservedObject var store: Store
+    @AppStorage(OverviewMode.key) private var mode = OverviewMode.expanded.rawValue
+
+    private var isExpanded: Bool { mode == OverviewMode.expanded.rawValue }
 
     var body: some View {
         PageScroll {
         VStack(spacing: 8) {
+            HStack(spacing: 12) {
+                Text("Usage")
+                    .font(.system(size: 13, weight: .semibold))
+                Spacer()
+                Picker("Overview", selection: $mode) {
+                    ForEach(OverviewMode.allCases, id: \.rawValue) { mode in
+                        Text(mode.label).tag(mode.rawValue)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .controlSize(.small)
+                .frame(width: 180)
+            }
+            .padding(.horizontal, 4)
             if store.enabledProviders.isEmpty {
                 NoteCard(symbol: "slider.horizontal.3", text: "No CLIs enabled. Turn some on in Settings.")
             } else {
-                VStack(spacing: 0) {
+                VStack(spacing: isExpanded ? 8 : 0) {
                     ForEach(Array(store.enabledProviders.enumerated()), id: \.element.id) { index, provider in
-                        if index > 0 {
+                        if index > 0, !isExpanded {
                             Divider().padding(.leading, 44).opacity(0.6)
                         }
                         if let snapshot = store.snapshot(for: provider) {
-                            OverviewRow(snapshot: snapshot, window: store.windowPreferences.headlineWindow(of: snapshot), now: store.clock, isRefreshing: store.refreshing.contains(provider) && store.connectivity == .available) {
-                                withAnimation(.snappy(duration: 0.2)) { store.page = .provider(provider) }
+                            if isExpanded {
+                                OverviewLimitsCard(store: store, snapshot: snapshot)
+                            } else {
+                                OverviewRow(snapshot: snapshot, window: store.windowPreferences.headlineWindow(of: snapshot), now: store.clock, isRefreshing: store.refreshing.contains(provider) && store.connectivity == .available) {
+                                    withAnimation(.snappy(duration: 0.2)) { store.page = .provider(provider) }
+                                }
                             }
                         } else {
                             PendingRow(provider: provider, isRefreshing: store.refreshing.contains(provider) && store.connectivity == .available)
                         }
                     }
                 }
-                .background(CardBackground())
+                .background {
+                    if !isExpanded { CardBackground() }
+                }
             }
         }
         .padding(.horizontal, 12)
         .padding(.top, 12)
         }
+    }
+}
+
+struct OverviewLimitsCard: View {
+    @ObservedObject var store: Store
+    let snapshot: ProviderSnapshot
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 4) {
+                Button {
+                    withAnimation(.snappy(duration: 0.2)) { store.page = .provider(snapshot.provider) }
+                } label: {
+                    HStack(spacing: 8) {
+                        BrandBadge(provider: snapshot.provider, size: 24)
+                        Text(snapshot.provider.displayName)
+                            .font(.system(size: 13, weight: .semibold))
+                        if let badge = snapshot.badge, !badge.isEmpty { PlanPill(text: badge) }
+                        Spacer(minLength: 0)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .pointerCursor()
+                .help("Open \(snapshot.provider.displayName) details")
+                if store.refreshing.contains(snapshot.provider) {
+                    ProgressView().controlSize(.mini)
+                }
+                if !snapshot.windows.isEmpty {
+                    LimitsMenu(store: store, provider: snapshot.provider, snapshot: snapshot)
+                }
+            }
+            ForEach(Array(store.windowPreferences.visibleWindows(of: snapshot).enumerated()), id: \.offset) { _, window in
+                WindowRow(title: window.displayTitle, window: window, now: store.clock)
+            }
+            if !snapshot.extras.isEmpty {
+                Divider().opacity(0.6)
+                Text(snapshot.extrasTitle ?? "Extras")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+                ForEach(Array(snapshot.extras.enumerated()), id: \.offset) { _, window in
+                    WindowRow(title: window.displayTitle, window: window, now: store.clock)
+                }
+            }
+            if let error = snapshot.error { ErrorRow(message: error) }
+            if let notice = snapshot.notice {
+                Text(notice)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if !snapshot.windows.isEmpty, store.windowPreferences.visibleWindows(of: snapshot).isEmpty {
+                Text("All limits hidden. Use the filter to show them.")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            if snapshot.isLocalCapture {
+                Text("Observed \(PopoverView.ago(from: snapshot.fetchedAt, now: store.clock)) · may be out of date")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(CardBackground())
     }
 }
 
@@ -135,13 +276,18 @@ struct OverviewRow: View {
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                         }
+                    } else if let notice = snapshot.notice {
+                        Text(notice)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
                     } else if !snapshot.windows.isEmpty {
                         Text("All limits hidden")
                             .font(.caption)
                             .foregroundStyle(.tertiary)
                     }
                     if snapshot.isLocalCapture {
-                        Text("Captured \(PopoverView.ago(from: snapshot.fetchedAt, now: now)) · may be out of date")
+                        Text("Observed \(PopoverView.ago(from: snapshot.fetchedAt, now: now)) · may be out of date")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
@@ -221,10 +367,12 @@ struct ProviderPage: View {
                             .padding(12)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(CardBackground())
+                    } else if snapshot.windows.isEmpty, let notice = snapshot.notice {
+                        NoteCard(symbol: "info.circle", text: notice)
                     } else {
                         LimitsCard(snapshot: snapshot, windows: store.windowPreferences.visibleWindows(of: snapshot), now: store.clock)
                         if snapshot.isLocalCapture {
-                            NoteCard(symbol: "clock", text: "Last changed capture: \(PopoverView.ago(from: snapshot.fetchedAt, now: store.clock)). These figures update while you use Claude Code and may be out of date.")
+                            NoteCard(symbol: "clock", text: "Last local update: \(PopoverView.ago(from: snapshot.fetchedAt, now: store.clock)). Run /usage in Claude Code or enable capture in Settings to update these figures.")
                         }
                         if provider == .codex {
                             CreditsCard(store: store, availableCount: snapshot.creditsAvailable)

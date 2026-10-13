@@ -86,7 +86,7 @@ final class Store: ObservableObject {
         guard !started else { return }
         started = true
         configureClaudeCapture()
-        if ClaudeUsageMode.current == .local { Task { await refresh(.claude) } }
+        if ClaudeUsageMode.current != .live { Task { await refresh(.claude) } }
         monitor.start { [weak self] connectivity in
             Task { @MainActor [weak self] in
                 await self?.connectivityChanged(connectivity)
@@ -156,7 +156,7 @@ final class Store: ObservableObject {
     }
 
     private func refreshTask(for provider: Provider) -> Task<Void, Never>? {
-        let isLocal = provider == .claude && ClaudeUsageMode.current == .local
+        let isLocal = provider == .claude && ClaudeUsageMode.current != .live
         guard connectivity == .available || isLocal, enabledProviders.contains(provider) else { return nil }
         if let running = providerTasks[provider] {
             return running.task
@@ -223,7 +223,7 @@ final class Store: ObservableObject {
 
     private func configureClaudeCapture() {
         captureWatcher.stop()
-        guard enabledProviders.contains(.claude), ClaudeUsageMode.current == .local else { return }
+        guard enabledProviders.contains(.claude), ClaudeUsageMode.current != .live else { return }
         do {
             try captureWatcher.start { [weak self] in
                 Task { @MainActor [weak self] in
@@ -314,6 +314,10 @@ final class Store: ObservableObject {
                     extras: [],
                     fetchedAt: Date()
                 )
+            case .muse:
+                let usage = try await MuseClient.session.usage()
+                return ProviderSnapshot(provider: .muse, badge: usage.plan, windows: usage.windows,
+                                        extras: [], notice: usage.notice, fetchedAt: usage.fetchedAt)
             }
         } catch {
             return .failed(provider, error)

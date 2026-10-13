@@ -6,6 +6,7 @@ struct SettingsPage: View {
     @AppStorage("refreshInterval") private var refreshInterval = RefreshInterval.fiveMinutes.rawValue
     @AppStorage("menuBarShowsPercent") private var menuBarShowsPercent = true
     @AppStorage(MenuBarSource.key) private var menuBarSource = MenuBarSource.tightest.rawValue
+    @AppStorage(OverviewMode.key) private var overviewMode = OverviewMode.expanded.rawValue
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
 
     var body: some View {
@@ -19,7 +20,7 @@ struct SettingsPage: View {
             PageScroll {
                 VStack(spacing: 8) {
                     SettingsCard(title: "CLIs") {
-                        ForEach(Array(Provider.allCases.enumerated()), id: \.element.id) { index, provider in
+                        ForEach(Array(Provider.available.enumerated()), id: \.element.id) { index, provider in
                             if index > 0 { RowDivider() }
                             SwitchRow(isOn: Binding(
                                 get: { store.enabledProviders.contains(provider) },
@@ -37,6 +38,10 @@ struct SettingsPage: View {
                     }
 
                     SettingsCard(title: "General") {
+                        SettingRow(symbol: "rectangle.grid.1x2", label: "Overview") {
+                            PillPicker(options: OverviewMode.allCases.map { ($0.rawValue, $0.label) }, selection: $overviewMode)
+                        }
+                        RowDivider()
                         SwitchRow(isOn: $launchAtLogin) {
                             RowIcon(symbol: "power")
                             Text("Launch at login")
@@ -67,9 +72,9 @@ struct SettingsPage: View {
                         SettingRow(symbol: "gauge.with.needle", label: "Menu bar gauge") {
                             PillPicker(
                                 options: [(MenuBarSource.tightest.rawValue, MenuBarSource.tightest.label)]
-                                    + Provider.allCases.map { (MenuBarSource.provider($0).rawValue, $0.displayName) },
+                                    + Provider.available.map { (MenuBarSource.provider($0).rawValue, $0.displayName) },
                                 selection: Binding(
-                                    get: { menuBarSource },
+                                    get: { MenuBarSource.current.rawValue },
                                     set: { menuBarSource = $0; store.updateMenuBar() }
                                 )
                             )
@@ -238,13 +243,15 @@ struct PillPicker: View {
 
 struct ClaudeUsageSettings: View {
     @ObservedObject var store: Store
-    @AppStorage(ClaudeUsageMode.key) private var mode = ClaudeUsageMode.live.rawValue
+    @AppStorage(ClaudeUsageMode.key) private var mode = ClaudeUsageMode.code.rawValue
 
-    private var isLocal: Bool { mode == ClaudeUsageMode.local.rawValue }
+    private var isLocal: Bool { mode != ClaudeUsageMode.live.rawValue }
+    private var isCode: Bool { mode == ClaudeUsageMode.code.rawValue }
 
     var body: some View {
-        SettingsCard(title: "Claude Code", footer: isLocal
-                     ? "Reads limits that Claude Code writes on each status-line update. Works offline."
+        SettingsCard(title: "Claude Code", footer: isCode
+                     ? "Reads Claude Code's saved /usage limits and any newer capture. Run /usage once to load all limits. Works offline."
+                     : isLocal ? "Reads limits that Claude Code writes on each status-line update. Works offline."
                      : "Signs in once and renews automatically, even while Claude Code is closed.") {
             SettingRow(symbol: "antenna.radiowaves.left.and.right", label: "Source") {
                 PillPicker(options: ClaudeUsageMode.allCases.map { ($0.rawValue, $0.label) },

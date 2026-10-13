@@ -31,6 +31,7 @@ enum ClaudeClient {
     }
 
     static func usage(mode: ClaudeUsageMode = .current) async throws -> Usage {
+        if mode == .code { return try codeUsage() }
         if mode == .local {
             let capture: ClaudeCapture
             do { capture = try ClaudeCapture.read() }
@@ -60,6 +61,44 @@ enum ClaudeClient {
     }
 
     private struct Unauthorized: Error {}
+
+    static func decodeCodeCache(_ data: Data, now: Date = Date()) throws -> Usage {
+        struct Cache: Decodable {
+            struct Entry: Decodable {
+                var fetchedAtMs: Double
+                var utilization: UsageBody
+            }
+            var cachedUsageUtilization: Entry?
+        }
+        let cache = try JSON.decode(Cache.self, from: data)
+        guard let entry = cache.cachedUsageUtilization,
+              entry.fetchedAtMs.isFinite, entry.fetchedAtMs > 0,
+              entry.fetchedAtMs / 1000 <= now.timeIntervalSince1970 + 60 else {
+            throw AppError("No cached Claude limits yet. Run /usage in Claude Code, then refresh LiteBar.")
+        }
+        var usage = usage(from: entry.utilization)
+        guard !usage.windows.isEmpty else {
+            throw AppError("Claude Code has not cached any subscription limits. Run /usage, then refresh LiteBar.")
+        }
+        usage.capturedAt = Date(timeIntervalSince1970: entry.fetchedAtMs / 1000)
+        return usage
+    }
+
+    static func codeUsage(cacheURL: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude.json"),
+                          captureURL: URL = ClaudeCapture.fileURL) throws -> Usage {
+        let cached = try? decodeCodeCache(Data(contentsOf: cacheURL))
+        let capture = try? ClaudeCapture.read(from: captureURL)
+        if let cached, (cached.capturedAt ?? .distantPast) >= (capture?.capturedAt ?? .distantPast) { return cached }
+        if let capture {
+            let windows = [(capture.fiveHour, "Session"), (capture.sevenDay, "Weekly")].compactMap { value, title in
+                value.map { RateWindow(usedPercent: $0.usedPercentage,
+                                       resetsAt: $0.resetsAt.map { Date(timeIntervalSince1970: $0) }, title: title) }
+            }
+            return Usage(windows: windows, capturedAt: capture.capturedAt)
+        }
+        if let cached { return cached }
+        throw AppError("Run /usage in Claude Code, then refresh LiteBar. Enable capture in Settings for updates after each response.")
+    }
 
     static func fetchUsage(token: String, session: URLSession = HTTPClient.session) async throws -> Usage {
         async let profile = fetchProfile(token: token, session: session)
@@ -130,7 +169,7 @@ enum ClaudeClient {
         return hasPro ? "Pro" : nil
     }
 
-    static func decodeUsage(_ data: Data) throws -> Usage {
+    private struct UsageBody: Decodable {
         struct ModelScope: Decodable {
             var display_name: String?
         }
@@ -147,17 +186,21 @@ enum ClaudeClient {
             var utilization: Double?
             var resets_at: String?
         }
-        struct Body: Decodable {
-            var five_hour: Bucket?
-            var seven_day: Bucket?
-            var limits: [Limit]?
-        }
+        var five_hour: Bucket?
+        var seven_day: Bucket?
+        var seven_day_opus: Bucket?
+        var seven_day_sonnet: Bucket?
+        var limits: [Limit]?
+    }
 
-        let body = try JSON.decode(Body.self, from: data)
+    static func decodeUsage(_ data: Data) throws -> Usage {
+        usage(from: try JSON.decode(UsageBody.self, from: data))
+    }
 
+    private static func usage(from body: UsageBody) -> Usage {
         var windows: [RateWindow] = []
         for limit in body.limits ?? [] {
-            guard let percent = limit.percent, let kind = limit.kind else { continue }
+            guard let percent = limit.percent, percent.isFinite, percent >= 0, let kind = limit.kind else { continue }
             let title: String
             switch kind {
             case "session": title = "Session"
@@ -174,8 +217,8 @@ enum ClaudeClient {
         }
 
         if windows.isEmpty {
-            func map(_ bucket: Bucket?, title: String) -> RateWindow? {
-                guard let bucket = bucket, let utilization = bucket.utilization else { return nil }
+            func map(_ bucket: UsageBody.Bucket?, title: String) -> RateWindow? {
+                guard let bucket = bucket, let utilization = bucket.utilization, utilization.isFinite, utilization >= 0 else { return nil }
                 return RateWindow(
                     usedPercent: utilization,
                     resetsAt: bucket.resets_at.flatMap(CodexClient.parseDate),
@@ -183,7 +226,8 @@ enum ClaudeClient {
                     title: title
                 )
             }
-            windows = [map(body.five_hour, title: "Session"), map(body.seven_day, title: "Weekly")].compactMap(\.self)
+            windows = [map(body.five_hour, title: "Session"), map(body.seven_day, title: "Weekly"),
+                       map(body.seven_day_opus, title: "Opus"), map(body.seven_day_sonnet, title: "Sonnet")].compactMap(\.self)
         }
 
         return Usage(windows: windows, accountSummary: nil)

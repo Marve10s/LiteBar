@@ -1,8 +1,8 @@
 # LiteBar
 
-A native macOS menu bar app for Codex, Claude Code, Antigravity, and OpenCode usage. Built with SwiftUI and AppKit, with no third-party runtime dependencies, embedded browser, or telemetry.
+A native macOS menu bar app for Codex, Claude Code, Antigravity, and Muse Code usage. Built with SwiftUI and AppKit, with no third-party runtime dependencies, embedded browser, or telemetry. OpenCode is temporarily hidden.
 
-LiteBar shows quota windows, reset times, and a menu bar gauge. Provider details and local token totals load on demand. The countdown updates only while the popover is open. One network notice covers all providers, and usage refreshes when macOS reports that connectivity has returned.
+LiteBar opens in **All limits** view, showing quota windows and reset times for every enabled provider, including model limits and extras. Switch to **Compact** in the overview or Settings for one headline limit per provider. LiteBar remembers the selection. Provider details and local token totals load on demand. The countdown updates only while the popover is open. One network notice covers all providers, and usage refreshes when macOS reports that connectivity has returned.
 
 ## Build and install
 
@@ -34,25 +34,30 @@ Use the packaged app for the bundled Claude capture helper and launch-at-login s
 
 ## Provider setup
 
-Disable providers you do not use in Settings. Automatic refresh defaults to five minutes; manual refresh is also available. On a CLI page, the filter button picks which limits are listed and which one the overview shows.
+Disable providers you do not use in Settings. Automatic refresh defaults to five minutes; manual refresh is also available. The filter button picks which limits are visible and which headline the compact overview shows.
 
 | Provider | Setup and credential source |
 | --- | --- |
 | Codex | Sign in through the Codex CLI. LiteBar reads `~/.codex/auth.json` and saves refreshed tokens there. |
+| Claude Code, default | Run `/usage` in Claude Code. LiteBar reads its saved limits in `~/.claude.json`, or a newer local capture. No separate sign-in is needed. |
 | Claude live | Connect separately in LiteBar Settings. The renewable profile-access grant lives in Keychain under `dev.ibrahime.LiteBar.claude`. LiteBar does not read or rotate Claude Code credentials. |
 | Claude local | Enable the capture helper in Settings and complete a response in Claude Code. |
 | Antigravity | Sign in through the `agy` CLI. LiteBar reads the saved token under `~/.gemini/antigravity-cli` and discovers the OAuth client from the installed CLI or Antigravity app. |
-| OpenCode | Sign in to OpenCode Go. LiteBar reads `~/.local/share/opencode/auth.json` and the cached model catalog. |
+| Muse Code | Sign in with `muse login`. LiteBar reads the Meta account token from Muse's auth file or its macOS Keychain item and requests subscription usage. API keys do not report subscription limits. |
 
-Provider usage endpoints and credential formats are unofficial integrations and can change. LiteBar contacts provider services directly. It has no application server and sends no telemetry. Local token totals come from CLI logs or OpenCode's SQLite database when you expand that section.
+Provider usage endpoints and credential formats are unofficial integrations and can change. LiteBar contacts provider services directly. It has no application server and sends no telemetry. Local token totals come from CLI logs when you expand that section.
+
+Muse reads are cached in memory for five minutes to limit requests to Meta. LiteBar reads Muse credentials without changing or renewing them. Meta's subscription endpoint also returns an inference key, which LiteBar discards. When Meta reports an active plan without quota figures, LiteBar shows that state without inventing a percentage. Its integration was checked against Muse Code 1.4.7 and an active Power Usage subscription. A live quota response was unavailable during verification.
 
 ## Claude modes
 
 Choose **Settings → Claude Code → Source**.
 
+The default **Claude Code** source reads the last saved `/usage` response, including model-specific weekly limits, and uses a newer capture when available. Run `/usage`, then refresh LiteBar to update the cache. LiteBar shows when it observed these local figures because they may be stale. It does not read or rotate Claude Code credentials.
+
 For **Live limits**, click **Connect Claude**, approve profile access in the browser, then paste the complete authorization code into LiteBar. The authorization client may be labeled Claude Code. LiteBar creates its own grant and renews it when needed during a refresh. No browser or Claude process stays open. Revoked access requires a new sign-in.
 
-For **Local capture**, click **Enable in Claude Code**. LiteBar backs up `~/.claude/settings.json` and installs its native helper as the status-line command. An existing status-line command keeps its input, output, and exit status through forwarding. Claude Code must publish `rate_limits` in its status-line JSON; the integration was verified with Claude Code 2.1.268.
+For updates after each response, click **Enable in Claude Code** with either the **Claude Code** or **Local capture** source. LiteBar backs up `~/.claude/settings.json` and installs its native helper as the status-line command. An existing status-line command keeps its input, output, and exit status through forwarding. Claude Code must publish `rate_limits` in its status-line JSON; the integration was verified with Claude Code 2.1.268. Capture supplies session and weekly limits; `/usage` supplies model-specific limits.
 
 The helper saves only quota windows and the time they changed, then exits. It has no network code. Unchanged figures cause no capture write or LiteBar wakeup. Local figures can become stale while Claude Code is closed, when switching accounts, or when using Claude elsewhere. Captures live in `~/Library/Caches/dev.ibrahime.LiteBar/claude-usage.json` and contain no credentials or conversation text.
 
@@ -71,5 +76,7 @@ LiteBar code is available under the [MIT license](LICENSE).
 The Claude and OpenAI icons come from [Simple Icons](https://github.com/simple-icons/simple-icons), with OpenAI matching version 15.0.0. Its [CC0 dedication](https://github.com/simple-icons/simple-icons/blob/develop/LICENSE.md) and [brand disclaimer](https://github.com/simple-icons/simple-icons/blob/develop/DISCLAIMER.md) apply.
 
 The Antigravity and OpenCode icons come from [CodexBar](https://github.com/steipete/CodexBar). Copyright (c) 2026 Peter Steinberger, distributed under the [MIT license](https://github.com/steipete/CodexBar/blob/main/LICENSE).
+
+The Meta symbol comes from [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Meta_Platforms_logo.svg), which cites Meta's brand resources as its source and lists the logo as public domain. LiteBar preserves its blue gradient and proportions.
 
 Provider names and marks belong to their respective owners. LiteBar is an independent project; these licenses do not grant trademark rights or imply endorsement.

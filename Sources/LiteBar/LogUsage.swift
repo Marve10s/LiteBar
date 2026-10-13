@@ -14,6 +14,7 @@ enum LogUsage {
         case .claude: directory = home.appendingPathComponent(".claude/projects")
         case .opencode: return try OpenCodeClient.localTotals(now: now)
         case .antigravity: throw AppError("Antigravity keeps conversations in a binary format LiteBar does not read.")
+        case .muse: throw AppError("Muse subscription usage comes from Meta, rather than local token totals.")
         }
         let jobs = collectFiles(directory: directory, provider: provider, now: now)
 
@@ -36,7 +37,7 @@ enum LogUsage {
         switch job.provider {
         case .codex: scanCodexFile(job.url, buckets: &bucket)
         case .claude: scanClaudeFile(job.url, buckets: &bucket)
-        case .antigravity, .opencode: break
+        case .antigravity, .muse, .opencode: break
         }
         return bucket.totals()
     }

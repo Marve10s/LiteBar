@@ -4,14 +4,21 @@ import Security
 import LocalAuthentication
 
 enum ClaudeUsageMode: String, CaseIterable {
+    case code
     case live
     case local
 
     static let key = "claudeUsageMode"
     static var current: Self {
-        UserDefaults.standard.string(forKey: key).flatMap(Self.init(rawValue:)) ?? .live
+        UserDefaults.standard.string(forKey: key).flatMap(Self.init(rawValue:)) ?? .code
     }
-    var label: String { self == .live ? "Live limits" : "Local capture" }
+    var label: String {
+        switch self {
+        case .code: "Claude Code"
+        case .live: "Live limits"
+        case .local: "Local capture"
+        }
+    }
 }
 
 enum ClaudeOAuth {

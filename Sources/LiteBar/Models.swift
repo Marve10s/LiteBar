@@ -4,15 +4,18 @@ enum Provider: String, CaseIterable, Sendable, Identifiable, Codable {
     case codex
     case claude
     case antigravity
+    case muse
     case opencode
 
     var id: String { rawValue }
+    static var available: [Provider] { allCases.filter { $0 != .opencode } }
 
     var displayName: String {
         switch self {
         case .codex: "Codex"
         case .claude: "Claude Code"
         case .antigravity: "Antigravity"
+        case .muse: "Muse Code"
         case .opencode: "OpenCode"
         }
     }
@@ -20,8 +23,9 @@ enum Provider: String, CaseIterable, Sendable, Identifiable, Codable {
     var sourceDescription: String {
         switch self {
         case .codex: "~/.codex/auth.json · ChatGPT usage endpoint"
-        case .claude: "Keychain · Anthropic OAuth usage endpoint"
+        case .claude: "Claude Code usage cache, local capture, or Anthropic OAuth"
         case .antigravity: "~/.gemini/antigravity-cli · Cloud Code quota endpoint"
+        case .muse: "Muse Code login · Meta subscription usage"
         case .opencode: "~/.local/share/opencode/auth.json · OpenCode Go usage endpoint"
         }
     }
@@ -31,7 +35,7 @@ enum Provider: String, CaseIterable, Sendable, Identifiable, Codable {
         case .codex: "~/.codex/sessions"
         case .claude: "~/.claude/projects"
         case .opencode: "~/.local/share/opencode/opencode.db"
-        case .antigravity: nil
+        case .antigravity, .muse: nil
         }
     }
 }
@@ -65,6 +69,7 @@ struct ProviderSnapshot: Identifiable, Sendable, Equatable {
     var extrasTitle: String?
     var creditsAvailable: Int?
     var error: String?
+    var notice: String?
     var connectionFailed = false
     var isLocalCapture = false
     var fetchedAt: Date
@@ -155,22 +160,42 @@ enum MenuBarSource: RawRepresentable, Hashable {
     }
 
     static var current: MenuBarSource {
-        UserDefaults.standard.string(forKey: key).flatMap(MenuBarSource.init(rawValue:)) ?? .tightest
+        let source = UserDefaults.standard.string(forKey: key).flatMap(MenuBarSource.init(rawValue:)) ?? .tightest
+        if case let .provider(provider) = source, !Provider.available.contains(provider) { return .tightest }
+        return source
     }
 }
 
 enum ProviderPreferences {
     static let key = "enabledProviders"
+    static let catalogKey = "knownProviders"
 
     static var enabled: [Provider] {
-        guard let raw = UserDefaults.standard.stringArray(forKey: key) else { return Provider.allCases }
-        return Provider.allCases.filter { raw.contains($0.rawValue) }
+        enabled(in: .standard)
+    }
+
+    static func enabled(in defaults: UserDefaults) -> [Provider] {
+        guard let raw = defaults.stringArray(forKey: key) else { return Provider.available }
+        let known = defaults.stringArray(forKey: catalogKey) ?? ["codex", "claude", "antigravity", "opencode"]
+        return Provider.available.filter { raw.contains($0.rawValue) || !known.contains($0.rawValue) }
     }
 
     static func setEnabled(_ provider: Provider, _ enabled: Bool) {
         var current = Set(Self.enabled.map(\.rawValue))
         if enabled { current.insert(provider.rawValue) } else { current.remove(provider.rawValue) }
         UserDefaults.standard.set(Provider.allCases.map(\.rawValue).filter(current.contains), forKey: key)
+        UserDefaults.standard.set(Provider.allCases.map(\.rawValue), forKey: catalogKey)
+    }
+}
+
+enum OverviewMode: String, CaseIterable {
+    case expanded
+    case compact
+
+    static let key = "overviewMode"
+    var label: String { self == .expanded ? "All limits" : "Compact" }
+    static var current: Self {
+        UserDefaults.standard.string(forKey: key).flatMap(Self.init(rawValue:)) ?? .expanded
     }
 }
 

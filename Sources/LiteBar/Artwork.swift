@@ -189,6 +189,7 @@ enum BrandIcon {
         case .codex: NSColor(srgbRed: 0x10 / 255, green: 0xA3 / 255, blue: 0x7F / 255, alpha: 1)
         case .claude: NSColor(srgbRed: 0xD9 / 255, green: 0x77 / 255, blue: 0x57 / 255, alpha: 1)
         case .antigravity: NSColor(srgbRed: 0x4C / 255, green: 0x8D / 255, blue: 0xF5 / 255, alpha: 1)
+        case .muse: NSColor.systemBlue
         case .opencode: NSColor.labelColor
         }
     }
@@ -199,6 +200,7 @@ enum BrandIcon {
         case .codex: "openai"
         case .claude: "claude"
         case .antigravity: "antigravity"
+        case .muse: "meta"
         case .opencode: "opencode"
         }
         guard let url = resources.url(forResource: name, withExtension: "svg", subdirectory: "icons/brand"),
@@ -211,9 +213,15 @@ enum BrandIcon {
         guard let template = template(provider) else { return nil }
         let tint = tint(for: provider)
         return NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
-            template.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1)
-            tint.setFill()
-            rect.fill(using: .sourceAtop)
+            if provider == .muse {
+                let height = rect.width * template.size.height / template.size.width
+                let imageRect = NSRect(x: rect.minX, y: rect.midY - height / 2, width: rect.width, height: height)
+                template.draw(in: imageRect, from: .zero, operation: .sourceOver, fraction: 1)
+            } else {
+                template.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1)
+                tint.setFill()
+                rect.fill(using: .sourceAtop)
+            }
             return true
         }
     }
