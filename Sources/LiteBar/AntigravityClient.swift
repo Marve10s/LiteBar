@@ -2,8 +2,7 @@ import Foundation
 
 enum AntigravityClient {
     struct Usage: Sendable {
-        var pools: [RateWindow]
-        var models: [RateWindow]
+        var windows: [RateWindow]
         var tier: String?
         var email: String?
     }
@@ -24,17 +23,11 @@ enum AntigravityClient {
         private var tier: String?
 
         func usage() async throws -> Usage {
-            let token = try await accessToken()
-            if tier == nil {
+            let windows = try await AntigravityClient.geminiLimits()
+            if tier == nil, let token = try? await accessToken() {
                 tier = try? await AntigravityClient.loadTier(token: token)
             }
-            let quotas = try await AntigravityClient.fetchModels(token: token)
-            return Usage(
-                pools: AntigravityClient.pools(from: quotas),
-                models: quotas.map(\.window),
-                tier: tier,
-                email: AntigravityClient.activeEmail()
-            )
+            return Usage(windows: windows, tier: tier, email: AntigravityClient.activeEmail())
         }
 
         private func accessToken() async throws -> String {
@@ -87,13 +80,35 @@ enum AntigravityClient {
         }
 
         static func load() throws -> SavedToken {
-            guard let data = try? Data(contentsOf: url) else {
+            guard let data = keychainData() ?? (try? Data(contentsOf: url)) else {
                 throw AppError("Antigravity CLI not signed in — run `agy` and log in with Google first.")
             }
+            return try decode(data)
+        }
+
+        private static func keychainData() -> Data? {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/security")
+            process.arguments = ["find-generic-password", "-s", "gemini", "-a", "antigravity", "-w"]
+            let output = Pipe()
+            process.standardOutput = output
+            process.standardError = FileHandle.nullDevice
+            guard (try? process.run()) != nil else { return nil }
+            let raw = output.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            guard process.terminationStatus == 0,
+                  let text = String(data: raw, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !text.isEmpty else { return nil }
+            let base64Prefix = "go-keyring-base64:"
+            guard text.hasPrefix(base64Prefix) else { return Data(text.utf8) }
+            return Data(base64Encoded: String(text.dropFirst(base64Prefix.count)))
+        }
+
+        static func decode(_ data: Data) throws -> SavedToken {
             let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
             guard let token = object?["token"] as? [String: Any],
                   let access = token["access_token"] as? String else {
-                throw AppError("Unrecognised Antigravity token file at ~/.gemini/antigravity-cli.")
+                throw AppError("Unrecognised Antigravity sign-in data — sign in with `agy` again.")
             }
             let expiry = (token["expiry"] as? String).flatMap(parseExpiry)
             return SavedToken(accessToken: access, refreshToken: token["refresh_token"] as? String, expiry: expiry)
@@ -237,64 +252,69 @@ enum AntigravityClient {
         }
     }
 
-    private struct ModelsResponse: Decodable {
-        var models: [String: Model]?
-    }
-
-    private struct Model: Decodable {
-        var displayName: String?
-        var modelProvider: String?
-        var quotaInfo: QuotaInfo?
-    }
-
-    private struct QuotaInfo: Decodable {
-        var remainingFraction: Double?
-        var resetTime: String?
-    }
-
-    struct ModelQuota: Sendable {
-        var pool: String
-        var window: RateWindow
-    }
-
-    static func fetchModels(token: String) async throws -> [ModelQuota] {
-        let response: ModelsResponse = try await post("fetchAvailableModels", token: token, body: [:])
-        var quotas: [ModelQuota] = []
-        for model in (response.models ?? [:]).values {
-            guard let fraction = model.quotaInfo?.remainingFraction,
-                  let name = model.displayName, !name.isEmpty else { continue }
-            quotas.append(ModelQuota(pool: poolName(for: model.modelProvider), window: RateWindow(
-                usedPercent: (1 - max(0, min(1, fraction))) * 100,
-                resetsAt: model.quotaInfo?.resetTime.flatMap(CodexClient.parseDate),
-                windowSeconds: nil,
-                title: name
-            )))
+    static func geminiLimits() async throws -> [RateWindow] {
+        let windows = parseGeminiLimits(try await runQuotaCommand())
+        guard !windows.isEmpty else {
+            throw AppError("Antigravity CLI returned no Gemini limits — sign in with `agy` again.")
         }
-        var byName: [String: ModelQuota] = [:]
-        for quota in quotas {
-            let name = quota.window.displayTitle
-            if let existing = byName[name], existing.window.leftPercent <= quota.window.leftPercent { continue }
-            byName[name] = quota
-        }
-        return byName.values.sorted { ($0.window.leftPercent, $0.window.displayTitle) < ($1.window.leftPercent, $1.window.displayTitle) }
+        return windows
     }
 
-    private static func poolName(for provider: String?) -> String {
-        switch provider {
-        case "MODEL_PROVIDER_ANTHROPIC": "Claude"
-        case "MODEL_PROVIDER_GOOGLE": "Gemini"
-        default: "Other"
+    static func parseGeminiLimits(_ output: String) -> [RateWindow] {
+        output.split(whereSeparator: \.isNewline).compactMap { line -> RateWindow? in
+            let fields = line.split(separator: "\t", omittingEmptySubsequences: false)
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+            guard fields.count >= 3, fields[0] == "Gemini Models",
+                  let left = Double(fields[2].replacingOccurrences(of: "%", with: "")) else { return nil }
+            let label = fields[1].lowercased()
+            let window: (seconds: Double, title: String)
+            if label.contains("weekly") {
+                window = (604_800, "Weekly")
+            } else if label.contains("five hour") || label.contains("5-hour") || label.contains("5h") {
+                window = (18_000, "5-hour")
+            } else {
+                return nil
+            }
+            return RateWindow(
+                usedPercent: 100 - max(0, min(100, left)),
+                resetsAt: fields.count > 3 ? CodexClient.parseDate(fields[3]) : nil,
+                windowSeconds: window.seconds,
+                title: window.title
+            )
         }
+        .sorted { ($0.windowSeconds ?? 0) < ($1.windowSeconds ?? 0) }
     }
 
-    static func pools(from quotas: [ModelQuota]) -> [RateWindow] {
-        var pools: [String: RateWindow] = [:]
-        for quota in quotas {
-            let model = quota.window
-            if let existing = pools[quota.pool], existing.leftPercent <= model.leftPercent { continue }
-            pools[quota.pool] = RateWindow(usedPercent: model.usedPercent, resetsAt: model.resetsAt, windowSeconds: nil, title: quota.pool)
+    private static var cliCandidates: [URL] {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        return [
+            home.appendingPathComponent(".local/bin/agy"),
+            geminiHome.appendingPathComponent("antigravity-cli/bin/agy"),
+            URL(fileURLWithPath: "/opt/homebrew/bin/agy"),
+            URL(fileURLWithPath: "/usr/local/bin/agy"),
+        ]
+    }
+
+    private static func runQuotaCommand() async throws -> String {
+        guard let cli = cliCandidates.first(where: { FileManager.default.isExecutableFile(atPath: $0.path) }) else {
+            throw AppError("Antigravity CLI not found — install `agy` and sign in.")
         }
-        let order = ["Gemini", "Claude", "Other"]
-        return order.compactMap { pools[$0] }
+        return try await Task.detached {
+            let process = Process()
+            process.executableURL = cli
+            process.arguments = ["-p", "/quota", "--log-file", "/dev/null", "--print-timeout", "30s"]
+            process.currentDirectoryURL = FileManager.default.temporaryDirectory
+            let output = Pipe()
+            process.standardOutput = output
+            process.standardError = FileHandle.nullDevice
+            process.standardInput = FileHandle.nullDevice
+            try process.run()
+            let data = output.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            guard process.terminationStatus == 0 else {
+                throw AppError("Antigravity quota check failed (exit \(process.terminationStatus)) — run `agy` and sign in.")
+            }
+            return String(decoding: data, as: UTF8.self)
+        }.value
     }
 }

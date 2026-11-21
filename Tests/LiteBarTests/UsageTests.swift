@@ -16,6 +16,21 @@ struct UsageTests {
         #expect(usage.notice == nil)
     }
 
+    @Test func antigravityKeepsOnlyGeminiWeeklyAndFiveHourLimits() {
+        let output = """
+        Gemini Models\tWeekly Limit Remaining\t98%\t2026-11-28T12:31:02Z
+        Gemini Models\tFive Hour Limit Remaining\t95%\t2026-11-21T17:31:02Z
+        Claude and GPT models\tWeekly Limit Remaining\t100%\t2026-11-28T12:38:49Z
+        Claude and GPT models\tFive Hour Limit Remaining\t100%\t2026-11-21T17:38:49Z
+        Gemini 4 Argon\tGemini 4 Argon Weekly Limit\t100%\t2026-11-28T12:38:49Z
+        """
+        let windows = AntigravityClient.parseGeminiLimits(output)
+        #expect(windows.map(\.displayTitle) == ["5-hour", "Weekly"])
+        #expect(windows.map(\.leftPercent) == [95, 98])
+        #expect(windows.map(\.windowSeconds) == [18_000, 604_800])
+        #expect(windows.first?.resetsAt == CodexClient.parseDate("2026-11-21T17:31:02Z"))
+    }
+
     @Test func museDoesNotInventIdleQuota() throws {
         let usage = try MuseClient.decodeUsage(Data(#"{"is_subs_active":true,"subs_tier_name":"Muse Code Power Usage"}"#.utf8), now: now)
         #expect(usage.windows.isEmpty)

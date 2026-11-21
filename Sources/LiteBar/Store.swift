@@ -300,9 +300,8 @@ final class Store: ObservableObject {
                     provider: .antigravity,
                     accountLine: usage.email,
                     badge: usage.tier,
-                    windows: usage.pools,
-                    extras: usage.models,
-                    extrasTitle: "Models",
+                    windows: usage.windows,
+                    extras: [],
                     fetchedAt: Date()
                 )
             case .opencode:

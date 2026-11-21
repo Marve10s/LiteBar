@@ -24,7 +24,7 @@ enum Provider: String, CaseIterable, Sendable, Identifiable, Codable {
         switch self {
         case .codex: "~/.codex/auth.json · ChatGPT usage endpoint"
         case .claude: "Claude Code usage cache, local capture, or Anthropic OAuth"
-        case .antigravity: "~/.gemini/antigravity-cli · Cloud Code quota endpoint"
+        case .antigravity: "agy /quota · Gemini weekly and 5-hour limits"
         case .muse: "Muse Code login · Meta subscription usage"
         case .opencode: "~/.local/share/opencode/auth.json · OpenCode Go usage endpoint"
         }
